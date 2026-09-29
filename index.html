@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Murder Mystery 🔪</title>
+<style>
+:root {
+  --bg:#0d0a0f;
+  --card:#1a141c;
+  --card2:#241b26;
+  --border:#49364a;
+  --text:#f7eef6;
+  --muted:#bba9b9;
+  --accent:#e8bfd6;
+  --accentText:#21151e;
+  --danger:#ff8f9b;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; min-height:100vh; display:flex; justify-content:center;
+  background:radial-gradient(circle at top,#251725 0,#0d0a0f 52%);
+  color:var(--text); font-family:system-ui,-apple-system,Segoe UI,sans-serif;
+}
+.wrap{width:min(720px,100%);padding:24px 16px 50px}
+.card{
+  background:rgba(26,20,28,.96); border:1px solid var(--border);
+  border-radius:24px; padding:25px; box-shadow:0 20px 70px #0009;
+}
+.hidden{display:none!important}
+.badge{
+  display:inline-block; padding:6px 10px; border-radius:999px;
+  background:#302231; color:#e8cddd; font-size:12px; font-weight:800;
+  letter-spacing:.08em;
+}
+h1{font-size:34px;margin:12px 0 8px}
+h2{margin-top:28px}
+p{line-height:1.5;color:var(--muted)}
+textarea,input{
+  width:100%; background:#0f0b11; color:white; border:1px solid #513d51;
+  border-radius:13px; padding:13px; font:inherit;
+}
+textarea{min-height:155px;resize:vertical}
+button{
+  border:0; border-radius:13px; padding:13px 17px; margin-top:12px;
+  font:inherit; font-weight:800; cursor:pointer;
+  background:var(--accent); color:var(--accentText);
+}
+button:disabled{opacity:.35;cursor:not-allowed}
+.secondary{background:#302431;color:white;border:1px solid #554052}
+.error{color:var(--danger);font-weight:700;margin-top:12px}
+.success{color:#baf0c3;font-weight:700;margin-top:12px}
+.link{
+  background:#0f0b11;border:1px solid #49364a;border-radius:12px;
+  padding:13px;word-break:break-all;margin-top:12px;
+}
+.numbers{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px;
+}
+.num{
+  margin:0;min-height:70px;font-size:24px;background:#2b202d;color:white;
+  border:1px solid #59435a;
+}
+.num.taken{
+  background:#171218;color:#776a77;text-decoration:line-through;
+}
+.role{
+  margin-top:20px;background:#2a1d29;border:1px solid #60455f;
+  border-radius:18px;padding:28px;text-align:center;font-size:34px;
+  font-weight:900;
+}
+.warning{
+  margin-top:18px;padding:14px;border-radius:13px;background:#211921;
+  color:#d8c7d6;font-size:14px;
+}
+@media(max-width:420px){
+  h1{font-size:28px}
+  .numbers{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<section class="card" id="createPage">
+  <span class="badge">MURDER MYSTERY</span>
+  <h1>Secret Role Picker 🔪</h1>
+  <p>
+    Create the game, send the link to your WhatsApp group, and then
+    <b>play without knowing who the murderer is.</b>
+  </p>
+
+  <h2>Characters / roles</h2>
+  <p>Put one role on each line.</p>
+
+  <textarea id="roles">Detective
+Detective
+Detective
+Detective
+Murderer
+Decoy</textarea>
+
+  <button id="createBtn">Create Game</button>
+  <div id="createError" class="error"></div>
+
+  <div id="createdBox" class="hidden">
+    <h2>Game created!</h2>
+    <p>Send this link to your WhatsApp group. <b>Do not send or share anything else.</b></p>
+    <div class="link" id="joinLink"></div>
+    <button id="copyBtn">Copy link</button>
+    <p class="warning">
+      You are the host, but you are also a player. Open the link yourself
+      and choose a random number. The app does not show you the hidden
+      role assignments.
+    </p>
+  </div>
+</section>
+
+<section class="card hidden" id="gamePage">
+  <span class="badge">CHOOSE YOUR NUMBER</span>
+  <h1>Pick ONE number</h1>
+  <p>
+    Once you click a number, it is permanently claimed.
+    Your role will appear only on your screen.
+  </p>
+
+  <div class="numbers" id="numbers"></div>
+  <div id="gameError" class="error"></div>
+
+  <div id="roleBox" class="hidden">
+    <p>Your secret role is:</p>
+    <div class="role" id="roleText"></div>
+    <div class="warning">
+      🔒 Keep this screen private. Don't show anyone your role.
+    </div>
+  </div>
+</section>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function request(url, options={}) {
+  return fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type":"application/json",
+      ...(options.headers || {})
+    }
+  });
+}
+
+async function createGame() {
+  const roles = $("roles").value
+    .split(/\r?\n/)
+    .map(x => x.trim())
+    .filter(Boolean);
+
+  $("createError").textContent = "";
+
+  if (roles.length < 2) {
+    $("createError").textContent = "Add at least 2 roles.";
+    return;
+  }
+
+  const btn = $("createBtn");
+  btn.disabled = true;
+  btn.textContent = "Creating...";
+
+  try {
+    const response = await request("/api/rooms", {
+      method:"POST",
+      body:JSON.stringify({roles})
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Couldn't create the game.");
+    }
+
+    const link = location.origin + "/room/" + data.roomId;
+    $("joinLink").textContent = link;
+    $("createdBox").classList.remove("hidden");
+
+    $("copyBtn").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(link);
+        $("copyBtn").textContent = "Copied ✓";
+        setTimeout(() => $("copyBtn").textContent = "Copy link", 1500);
+      } catch {
+        $("createError").textContent =
+          "Copy didn't work. Long-press/right-click the link and copy it.";
+      }
+    };
+  } catch (err) {
+    $("createError").textContent = err.message;
+    btn.disabled = false;
+    btn.textContent = "Create Game";
+  }
+}
+
+async function loadGame(roomId) {
+  $("createPage").classList.add("hidden");
+  $("gamePage").classList.remove("hidden");
+
+  try {
+    const response = await request("/api/rooms/" + roomId);
+    const data = await response.json();
+
+    if (!response.ok) throw new Error(data.error || "Game not found.");
+
+    renderNumbers(roomId, data.count);
+    await refreshNumbers(roomId);
+
+    // Keep the number board current for everyone.
+    setInterval(() => refreshNumbers(roomId), 1500);
+  } catch(err) {
+    $("gameError").textContent = err.message;
+  }
+}
+
+function renderNumbers(roomId, count) {
+  const container = $("numbers");
+  container.innerHTML = "";
+
+  for(let n=1; n<=count; n++) {
+    const button = document.createElement("button");
+    button.className = "num";
+    button.textContent = n;
+    button.dataset.number = n;
+    button.onclick = () => claimNumber(roomId, n, button);
+    container.appendChild(button);
+  }
+}
+
+async function refreshNumbers(roomId) {
+  const response = await request("/api/rooms/" + roomId + "/status");
+  if (!response.ok) return;
+
+  const data = await response.json();
+
+  for (const button of document.querySelectorAll(".num")) {
+    const n = button.dataset.number;
+    if (data.status[n]) {
+      button.disabled = true;
+      button.classList.add("taken");
+    }
+  }
+}
+
+async function claimNumber(roomId, number, button) {
+  if (button.disabled) return;
+
+  button.disabled = true;
+  $("gameError").textContent = "";
+
+  try {
+    const response = await request("/api/rooms/" + roomId + "/pick", {
+      method:"POST",
+      body:JSON.stringify({number})
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      button.classList.add("taken");
+      throw new Error(data.error || "That number is unavailable.");
+    }
+
+    // Nobody can choose a second role in this browser.
+    document.querySelectorAll(".num").forEach(b => {
+      b.disabled = true;
+      if (b !== button) b.classList.add("taken");
+    });
+
+    $("roleText").textContent = data.role;
+    $("roleBox").classList.remove("hidden");
+
+    // Only this player's token is stored locally.
+    localStorage.setItem("mm-role-" + roomId, data.token);
+  } catch(err) {
+    $("gameError").textContent = err.message;
+    if (!err.message.includes("already been picked")) {
+      button.disabled = false;
+    }
+    await refreshNumbers(roomId);
+  }
+}
+
+$("createBtn").addEventListener("click", createGame);
+
+const match = location.pathname.match(/^\/room\/([A-Z0-9]+)$/i);
+if (match) {
+  loadGame(match[1].toUpperCase());
+}
+</script>
+</body>
+</html>
